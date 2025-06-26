@@ -3,181 +3,173 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-metrics = ['Quotes', 'Sales', 'Written_Premiums', 'Closing_Ratio', 'Avg_Premium', 'Avg_CLV']
+_METRICS = [
+    "Quotes",
+    "Sales",
+    "Written_Premiums",
+    "Closing_Ratio",
+    "Avg_Premium",
+    "Avg_CLV",
+]
+
 
 @module.ui
 def dashboard_ui():
+    """
+    Executive-overview tab.
+    """
     return ui.nav_panel(
         "Executive Overview",
         ui.layout_column_wrap(
+            # ---- KPI table --------------------------------------------------
             ui.card(
                 ui.card_header("KPI Data Table"),
-                ui.output_data_frame("kpi_table")
+                ui.output_data_frame("kpi_table"),
             ),
+            # ---- Trend chart -------------------------------------------------
             ui.card(
                 ui.card_header("Performance Trends"),
                 ui.div(
                     ui.input_checkbox_group(
                         "metrics",
                         "Select metrics to display:",
-                        choices=metrics,
+                        choices=_METRICS,
                         selected=["Quotes", "Sales", "Closing_Ratio"],
-                        inline=True
+                        inline=True,
                     ),
-                    style="display: flex; align-items: center;"
+                    style="display:flex;align-items:center;",
                 ),
                 ui.output_plot("trend_plot"),
-                ui.output_ui("trend_indicators")
+                ui.output_ui("trend_indicators"),
             ),
-            width=1/2
-        )
+            width=1 / 2,
+        ),
     )
+
 
 @module.server
 def dashboard_server(input, output, session, filtered_data):
-
+    # ---- helpers -------------------------------------------------------
     @reactive.calc
-    def get_kpi_summary():
-        data = filtered_data()
-        kpi_summary = {
-            "Metric": ["Total Quotes", "Total Sales", "Total Written Premiums", "Avg Closing Ratio", "Avg Premium", "Avg CLV"],
-            "Value": [
-                f"{data['Quotes'].sum():,}",
-                f"{data['Sales'].sum():,}",
-                f"{data['Written_Premiums'].sum():,}",
-                f"{data['Closing_Ratio'].mean():.2f}%",
-                f"{data['Avg_Premium'].mean():.2f}",
-                f"{data['Avg_CLV'].mean():.2f}",
+    def kpi_summary() -> pd.DataFrame:
+        df = filtered_data()
+
+        summary = {
+            "Metric": [
+                "Total Quotes",
+                "Total Sales",
+                "Total Written Premiums",
+                "Avg Closing Ratio",
+                "Avg Premium",
+                "Avg CLV",
             ],
-            "Trend": []
+            "Value": [
+                f"{df['Quotes'].sum():,}",
+                f"{df['Sales'].sum():,}",
+                f"{df['Written_Premiums'].sum():,}",
+                f"{df['Closing_Ratio'].mean():.2f} %",
+                f"{df['Avg_Premium'].mean():.2f}",
+                f"{df['Avg_CLV'].mean():.2f}",
+            ],
+            "Trend": [],
         }
 
-        data_sorted = data.sort_values("Month")
-        for metric in metrics:
-            if len(data_sorted) > 1:
-                first_val = data_sorted[metric].iloc[0]
-                last_val = data_sorted[metric].iloc[-1]
-                if first_val != 0:
-                    trend = ((last_val - first_val) / first_val) * 100
-                else:
-                    trend = 0
+        # compute pct change over the whole period
+        df_sorted = df.sort_values("Month")
+        for metric in _METRICS:
+            if len(df_sorted) > 1:
+                first, last = df_sorted[metric].iloc[[0, -1]]
+                trend = 0 if first == 0 else (last - first) / first * 100
             else:
                 trend = 0
-            kpi_summary["Trend"].append(trend)
+            summary["Trend"].append(trend)
 
-        return pd.DataFrame(kpi_summary)
+        return pd.DataFrame(summary)
 
+    # ---- outputs -------------------------------------------------------
     @render.data_frame
     def kpi_table():
-        kpi_display = get_kpi_summary().copy()
-        formatted_trends = []
-        for trend_val in kpi_display["Trend"]:
-            if trend_val == "N/A":
-                formatted_trends.append("N/A")
+        tbl = kpi_summary().copy()
+
+        # pretty-print the trend column
+        fmt = []
+        for v in tbl["Trend"]:
+            if v > 0:
+                fmt.append(f"+{v:.2f} %")
+            elif v < 0:
+                fmt.append(f"{v:.2f} %")
             else:
-                if trend_val > 0:
-                    formatted_trends.append(f"+{trend_val:.2f}%")
-                elif trend_val < 0:
-                    formatted_trends.append(f"{trend_val:.2f}%")
-                else:
-                    formatted_trends.append(f"~ 0.00%")
-        kpi_display["Trend"] = formatted_trends
-        return render.DataGrid(kpi_display, width="100%", height=300)
+                fmt.append("~ 0.00 %")
+        tbl["Trend"] = fmt
+
+        # returning a bare DataFrame is now the recommended way
+        return tbl
 
     @render.plot
     def trend_plot():
-        data = filtered_data().sort_values("Month")
-        selected_metrics = input.metrics()
+        df = filtered_data().sort_values("Month")
+        selected = input.metrics()
+
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        scale_factors = {
+        scale = {
             "Quotes": 1,
             "Sales": 1,
-            "Written_Premiums": 1/1000,
+            "Written_Premiums": 1 / 1000,
             "Closing_Ratio": 1,
             "Avg_Premium": 1,
-            "Avg_CLV": 1/1000
+            "Avg_CLV": 1 / 1000,
         }
 
-        column_map = {
-            "Quotes": "Quotes",
-            "Sales": "Sales",
-            "Written_Premiums": "Written_Premiums",
-            "Closing_Ratio": "Closing_Ratio",
-            "Avg_Premium": "Avg_Premium",
-            "Avg_CLV": "Avg_CLV"
-        }
-
-        for metric in selected_metrics:
-            column = column_map[metric]
-            factor = scale_factors[metric]
-            ax.plot(data["Month"], data[column] * factor, marker="o", label=metric)
+        for metric in selected:
+            ax.plot(
+                df["Month"],
+                df[metric] * scale[metric],
+                marker="o",
+                label=metric.replace("_", " "),
+            )
 
         ax.set_xlabel("Month")
         ax.set_ylabel("Value")
         ax.set_title("Performance Trends")
-        ax.legend()
         ax.grid(True, linestyle="--", alpha=0.7)
         plt.xticks(rotation=45)
+        ax.legend()
         plt.tight_layout()
-
         return fig
 
     @render.ui
     def trend_indicators():
-        data = filtered_data().sort_values("Month")
-        selected_metrics = input.metrics()
-        column_map = {
-            "Quotes": "Quotes",
-            "Sales": "Sales",
-            "Written_Premiums": "Written_Premiums",
-            "Closing_Ratio": "Closing_Ratio",
-            "Avg_Premium": "Avg_Premium",
-            "Avg_CLV": "Avg_CLV"
-        }
+        df = filtered_data().sort_values("Month")
+        selected = input.metrics()
 
         indicators = []
-        for metric in selected_metrics:
-            column = column_map[metric]
-            if len(data) >= 2:
-                current = data[column].iloc[-1]
-                previous = data[column].iloc[-2]
-                if previous != 0:
-                    pct_change = ((current - previous) / previous) * 100
-                else:
-                    pct_change = 0
+        for metric in selected:
+            if len(df) < 2:
+                continue
 
-                if pct_change > 0:
-                    color = "green"
-                    arrow = "↑"
-                    sign = "+"
-                elif pct_change < 0:
-                    color = "red"
-                    arrow = "↓"
-                    sign = ""
-                else:
-                    color = "gray"
-                    arrow = "→"
-                    sign = ""
+            curr, prev = df[metric].iloc[-1], df[metric].iloc[-2]
+            pct = 0 if prev == 0 else (curr - prev) / prev * 100
+            arrow = "↑" if pct > 0 else "↓" if pct < 0 else "→"
+            color = "green" if pct > 0 else "red" if pct < 0 else "gray"
+            sign = "+" if pct > 0 else ""
 
-                indicators.append(
-                    ui.div(
-                        ui.h5(metric),
-                        ui.p(
-                            f"Month-over-month: {arrow} ",
-                            ui.span(
-                                f"{sign}{pct_change:.2f}%",
-                                style=f"color: {color}; font-weight: bold;"
-                            )
+            indicators.append(
+                ui.div(
+                    ui.h5(metric.replace("_", " ")),
+                    ui.p(
+                        f"Month-over-month: {arrow} ",
+                        ui.span(
+                            f"{sign}{pct:.2f} %",
+                            style=f"color:{color};font-weight:bold;",
                         ),
-                        style="margin-right: 15px; margin-bottom: 10px;"
-                    )
+                    ),
+                    style="margin-right:15px;margin-bottom:10px;",
                 )
+            )
+
         return ui.div(
             ui.h4("Trend Analysis (Month-over-Month)"),
-            ui.div(
-                {"class": "d-flex flex-wrap"},
-                *indicators
-            ),
-            style="margin-top: 15px;"
+            ui.div({"class": "d-flex flex-wrap"}, *indicators),
+            style="margin-top:15px;",
         )
