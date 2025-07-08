@@ -91,9 +91,13 @@ def dashboard_server(input, output, session, filtered_data):
                 ("Total", df),
             ]
 
-        last_month = df["Month"].iloc[-1] if not df.empty else ""
-        rows = []
+        # format the last-month label as "Mon YYYY"
+        if not df.empty:
+            last_month_label = df["Month"].iloc[-1].strftime("%b %Y")
+        else:
+            last_month_label = ""
 
+        rows = []
         for m in _METRICS:
             label = METRIC_LABELS[m]
 
@@ -112,7 +116,7 @@ def dashboard_server(input, output, session, filtered_data):
                     pct = 0 if first == 0 else (last - first) / first * 100
                 else:
                     pct = 0
-                row[f"{cat_name} {last_month}"] = val
+                row[f"{cat_name} {last_month_label}"] = val
                 row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
             rows.append(row)
 
@@ -131,7 +135,7 @@ def dashboard_server(input, output, session, filtered_data):
                     pct = 0 if first == 0 else (last - first) / first * 100
                 else:
                     pct = 0
-                row[f"{cat_name} {last_month}"] = val
+                row[f"{cat_name} {last_month_label}"] = val
                 row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
             rows.append(row)
 
@@ -150,7 +154,7 @@ def dashboard_server(input, output, session, filtered_data):
                     pct = 0 if first == 0 else (last - first) / first * 100
                 else:
                     pct = 0
-                row[f"{cat_name} {last_month}"] = val
+                row[f"{cat_name} {last_month_label}"] = val
                 row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
             rows.append(row)
 
@@ -158,7 +162,7 @@ def dashboard_server(input, output, session, filtered_data):
         # enforce column order
         cols = ["Metrics"]
         for cat_name, _ in cats:
-            cols += [f"{cat_name} {last_month}", f"{cat_name} YoY"]
+            cols += [f"{cat_name} {last_month_label}", f"{cat_name} YoY"]
         return wide[cols]
 
     @render.ui
@@ -174,7 +178,6 @@ def dashboard_server(input, output, session, filtered_data):
           .kpi-table table {{
             border-collapse: collapse;
             width: 100%;
-            /* 0.5px smaller typography */
             font-size: calc(100% - 1px);
           }}
           .kpi-table th,
@@ -210,6 +213,7 @@ def dashboard_server(input, output, session, filtered_data):
         x = range(len(df))
         bottom = [0] * len(df)
 
+        # stacked bars
         for m in ("Quotes", "Sales"):
             if m in sel:
                 vals = (df[m] * scale[m]).tolist()
@@ -224,6 +228,7 @@ def dashboard_server(input, output, session, filtered_data):
                 )
                 bottom = [b + v for b, v in zip(bottom, vals)]
 
+        # line plots
         for m in sel:
             if m not in ("Quotes", "Sales", "Closing_Ratio"):
                 ax.plot(
@@ -234,6 +239,7 @@ def dashboard_server(input, output, session, filtered_data):
                     label=METRIC_LABELS[m],
                 )
 
+        # secondary axis for closing ratio
         h2, l2 = [], []
         if "Closing_Ratio" in sel:
             ax2 = ax.twinx()
@@ -248,15 +254,16 @@ def dashboard_server(input, output, session, filtered_data):
             ax2.set_ylabel("Closing Ratio (%)")
             h2, l2 = ax2.get_legend_handles_labels()
 
+        # monthly labels formatted as "Mon YYYY"
         ax.set_xticks(x)
-        ax.set_xticklabels(df["Month"], rotation=45)
+        ax.set_xticklabels(df["Month"].dt.strftime("%b %Y"), rotation=45)
         ax.set_xlabel("Month")
         ax.set_ylabel("Value")
         ax.set_title("Performance Trends")
         ax.grid(True, linestyle="--", alpha=0.7)
 
-        h1, l1 = ax.get_legend_handles_labels()
-        ax.legend(h1 + h2, l1 + l2, loc="upper left")
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles + h2, labels + l2, loc="upper left")
         fig.tight_layout()
         return fig
 

@@ -8,8 +8,10 @@ from datetime import datetime, timedelta
 np.random.seed(123)
 num_months = 12
 today = datetime.now()
-dates = [(today - timedelta(days=30 * i)).strftime("%b %Y")
-         for i in range(num_months - 1, -1, -1)]
+dates = [
+    (today - timedelta(days=30 * i)).strftime("%b %Y")
+    for i in range(num_months - 1, -1, -1)
+]
 
 groups = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]
 tiers = ["Premium", "Standard", "Basic"]
@@ -34,45 +36,68 @@ data = pd.DataFrame({
 })
 data["Closing_Ratio"] = (data["Sales"] / data["Quotes"] * 100).round(2)
 
+# convert Month strings to actual dates for the slider
+data["Month"] = pd.to_datetime(data["Month"], format="%b %Y")
+
 
 @module.ui
 def sidebar_ui():
     return ui.sidebar(
         ui.h3("Filters"),
-        ui.input_select(
-            "time_period", "Time Period",
-            choices=["Last 3 Months", "Last 6 Months", "Last 12 Months"],
-            selected="Last 12 Months"
+
+        # 1) range slider for Month, formatted as "Mon|YYYY"
+        ui.input_slider(
+            "month_range",
+            "Time Period",
+            min=data["Month"].min(),
+            max=data["Month"].max(),
+            value=(data["Month"].min(), data["Month"].max()),
+            ticks=True,
+            time_format="%b|%Y",
+            drag_range=True,
+            width="100%",
         ),
-        ui.input_select(
-            "group", "Group",
-            choices=["All"] + groups,
-            selected="All"
+
+        # 2) free-text, multi-entry group selector
+        ui.input_selectize(
+            "group",
+            "Group",
+            choices=groups,
+            multiple=True,
+            options={
+                "create": True
+            },
         ),
+
         ui.input_select(
-            "marketing_tier", "Marketing Tier",
+            "marketing_tier",
+            "Marketing Tier",
             choices=["All"] + tiers,
-            selected="All"
+            selected="All",
         ),
         ui.input_select(
-            "region", "Region",
+            "region",
+            "Region",
             choices=["All"] + regions,
-            selected="All"
+            selected="All",
         ),
         ui.input_select(
-            "product", "Product",
+            "product",
+            "Product",
             choices=["All"] + products,
-            selected="All"
+            selected="All",
         ),
         ui.input_select(
-            "segment_type", "Segment",
+            "segment_type",
+            "Segment",
             choices=["All"] + segment_types,
-            selected="All"
+            selected="All",
         ),
         ui.input_select(
-            "channel", "Channel",
+            "channel",
+            "Channel",
             choices=["All"] + channels,
-            selected="All"
+            selected="All",
         ),
     )
 
@@ -82,12 +107,18 @@ def sidebar_server(input, output, session):
     @reactive.calc
     def filtered_data():
         df = data.copy()
-        # slice by time
-        months_map = {"Last 3 Months": 3, "Last 6 Months": 6, "Last 12 Months": 12}
-        df = df.tail(months_map[input.time_period()])
-        # apply filters
+
+        # apply the date‐range filter
+        start, end = input.month_range()
+        df = df[(df["Month"] >= start) & (df["Month"] <= end)]
+
+        # apply the multi‐group filter (empty = all)
+        selected_groups = input.group()
+        if selected_groups:
+            df = df[df["Group"].isin(selected_groups)]
+
+        # other dropdown filters
         for fld, val in [
-            ("Group", input.group()),
             ("Marketing_Tier", input.marketing_tier()),
             ("Region", input.region()),
             ("Product", input.product()),
@@ -96,6 +127,7 @@ def sidebar_server(input, output, session):
         ]:
             if val != "All":
                 df = df[df[fld] == val]
+
         return df
 
     return filtered_data
