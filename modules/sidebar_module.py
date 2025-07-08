@@ -58,15 +58,13 @@ def sidebar_ui():
             width="100%",
         ),
 
-        # 2) free-text, multi-entry group selector
+        # 2) multi-select group selector (only existing groups allowed)
         ui.input_selectize(
             "group",
             "Group",
             choices=groups,
             multiple=True,
-            options={
-                "create": True
-            },
+            # removed `create` option so users cannot add arbitrary entries
         ),
 
         ui.input_select(
