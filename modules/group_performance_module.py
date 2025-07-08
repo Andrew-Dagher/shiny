@@ -1,5 +1,6 @@
 # modules/group_performance_module.py
 from shiny import ui, module, render
+import pandas as pd
 import matplotlib.pyplot as plt
 
 # reuse the same mapping for metrics
@@ -37,29 +38,29 @@ def group_performance_server(input, output, session, filtered_data):
     @render.data_frame
     def group_monthly_data():
         df = filtered_data()
-        # Hide filter-related columns
-        cols = ["GroupID", "Group"] + list(METRIC_LABELS.keys())
+        # show only Group and the metrics
+        cols = ["Group"] + list(METRIC_LABELS.keys())
         df2 = df[cols].copy()
-        # Rename columns for readability
-        rename_map = {
-            "GroupID": "Group ID",
-            **METRIC_LABELS
-        }
+        # rename for readability
+        rename_map = {"Group": "Group"}  # keep the column name as "Group"
+        rename_map.update(METRIC_LABELS)
         df2.rename(columns=rename_map, inplace=True)
-        return df2
+        # render with DataGrid at full width
+        return render.DataGrid(df2, width="100%")
 
     @render.plot
     def group_comparison_plot():
         data = filtered_data()
         metric = input.group_compare_metric()
         grouped = (
-            data.groupby('Group')[metric]
-            .mean().reset_index()
-            .sort_values(metric, ascending=False)
+            data.groupby("Group")[metric]
+                .mean()
+                .reset_index()
+                .sort_values(metric, ascending=False)
         )
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        ax.bar(grouped['Group'], grouped[metric], color='tab:blue')
+        ax.bar(grouped["Group"], grouped[metric], color="tab:blue")
         ax.set_xlabel("Group")
         ax.set_ylabel(METRIC_LABELS[metric])
         ax.set_title(f"{METRIC_LABELS[metric]} by Group")
