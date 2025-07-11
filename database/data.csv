@@ -1,4 +1,6 @@
 sqpmp_fiscal_period_cd,parentgroupno,parentgroupname,grp_marketing_tier,region,province,top3Q,grp_segment,product,subproduct,bol_eligibility,incoming_channel,closing_channel,nb_quote,nb_nwb,nb_ren,nb_can,nb_end,prime_nwb,prime_ren,prime_can,prime_end,total_wp,start_date,group_age,nb_eligibles,inforce_clients,zones,nb_policies
-202301,ON 1234,Alpha Group,Premium,ON,ON,Top1,Affinity,Home,Standard,1,Web,Inbound,120,30,50,20,20,5000,7500,6000,4000,250000,,,,,Zone1,150
-202302,AB 6789,Beta Group,Standard,AB,BC,Top2,Direct Market,Auto,Deluxe,Non-Elligible,Inbound,Web,95,25,40,15,15,4000,6800,5500.999,3700,200000,,,,,Zone2,140
-202303,QC 6541,Gamma Group,Basic,North,QC,Top3,Affinity,Home,Premium,Non-Elligible,Web,Digitally Enabled,140,35,60,25,20,6000,8000,6500,4200,280000,,,,,Zone3,160
+202501,ON1001,Alpha Group,Premium,ON,ON,Top1,Affinity,Home,Standard,Eligible,Inbound,Inbound,150,40,35,5,10,8000,7000,500,1200,320000,2025-01-01,5,200,180,ZoneA,250
+202502,AB2002,Beta Group,Standard,AB,AB,Top2,Direct Market,Auto,Deluxe,Non-Eligible,Web,Web,120,30,25,3,8,6000,5500,300,900,210000,2025-02-01,4,180,160,ZoneB,220
+202503,QC3003,Gamma Group,Basic,QC,QC,Top3,Affinity,Home,Premium,Eligible,Inbound,Web,180,50,45,7,12,10000,9000,700,1500,400000,2025-03-01,6,220,200,ZoneC,300
+202504,MB4004,Delta Group,Premium,MB,MB,Top4,Direct Market,Auto,Standard,Eligible,Web,Inbound,200,60,50,6,15,12000,11000,600,1800,480000,2025-04-01,3,240,210,ZoneD,320
+202505,BC5005,Epsilon Group,Standard,BC,BC,Top5,Affinity,Home,Standard,Non-Eligible,Inbound,Inbound,140,45,40,4,9,9000,8500,400,1000,290000,2025-05-01,7,210,195,ZoneE,270
