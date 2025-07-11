@@ -5,43 +5,63 @@ import pandas as pd
 
 from shiny import ui, reactive, module
 
-# ─── Load & transform DB once at import ─────────────────────────────────
+# ─── Load & preprocess the DB ────────────────────────────────────────────
 _db_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "database", "Dashboard.db")
 )
 _conn = sqlite3.connect(_db_path)
-_df_all = pd.read_sql("SELECT * FROM group_performance", _conn, parse_dates=["start_date"])
+_raw = pd.read_sql("SELECT * FROM group_performance", _conn)
 _conn.close()
 
-# Map DB to the fields your dashboard expects
-_df_all = _df_all.assign(
-    Month              = _df_all["start_date"],
-    Group              = _df_all["parentgroupname"],
-    Marketing_Tier     = _df_all["grp_marketing_tier"],
-    Region             = _df_all["region"],
-    Product            = _df_all["product"],
-    Channel            = _df_all["incoming_channel"],
-    Segment_Type       = _df_all["grp_segment"],
-    Quotes             = _df_all["nb_quote"].astype(int),
-    Sales              = (_df_all["nb_nwb"] + _df_all["nb_ren"]).astype(int),
-    Written_Premiums   = _df_all["total_wp"].astype(float),
+# 1) parse fiscal code YYYYMM → Month (Timestamp)
+_raw["Month"] = pd.to_datetime(
+    _raw["sqapp_fiscal_period_cd"].astype(str),
+    format="%Y%m",
+    errors="coerce",
 )
+
+# 2) drop rows missing Month or parentgroupname
+_raw.dropna(subset=["Month", "parentgroupname"], inplace=True)
+
+# 3) fill numeric nulls so sums/means/ratios are safe
+_for_zero = ["nb_quote", "nb_nwb", "nb_ren", "total_wp", "inforce_clients"]
+for col in _for_zero:
+    if col in _raw:
+        _raw[col] = _raw[col].fillna(0)
+
+# 4) map to the fields your dashboard expects
+_df_all = _raw.assign(
+    Group            = _raw["parentgroupname"],
+    Marketing_Tier   = _raw["grp_marketing_tier"],
+    Region           = _raw["region"],
+    Product          = _raw["product"],
+    Channel          = _raw["incoming_channel"],
+    Segment_Type     = _raw["grp_segment"],
+    Quotes           = _raw["nb_quote"].astype(int),
+    Sales            = (_raw["nb_nwb"] + _raw["nb_ren"]).astype(int),
+    Written_Premiums = _raw["total_wp"].astype(float),
+)
+
+# 5) compute averages & closing ratio safely
 _df_all["Avg_Premium"] = _df_all.apply(
-    lambda r: (r["total_wp"] / r["Sales"]) if r["Sales"] > 0 else 0, axis=1
+    lambda r: (r["total_wp"] / r["Sales"]) if r["Sales"] > 0 else 0,
+    axis=1,
 )
 _df_all["Avg_CLV"] = _df_all.apply(
-    lambda r: (r["total_wp"] / r["inforce_clients"]) if r["inforce_clients"] > 0 else 0, axis=1
+    lambda r: (r["total_wp"] / r["inforce_clients"]) if r["inforce_clients"] > 0 else 0,
+    axis=1,
 )
 _df_all["Closing_Ratio"] = (_df_all["Sales"] / _df_all["Quotes"] * 100).round(2)
 
-# Pre-compute for UI
-_MIN_DATE, _MAX_DATE = _df_all["Month"].min(), _df_all["Month"].max()
-_GROUPS   = sorted(_df_all["Group"].unique())
-_TIERS    = sorted(_df_all["Marketing_Tier"].unique())
-_REGIONS  = sorted(_df_all["Region"].unique())
-_PRODUCTS = sorted(_df_all["Product"].unique())
-_SEGMENTS = sorted(_df_all["Segment_Type"].unique())
-_CHANNELS = sorted(_df_all["Channel"].unique())
+# 6) compute slider bounds & dropdown choices from cleaned data
+_MIN_DATE  = _df_all["Month"].min()
+_MAX_DATE  = _df_all["Month"].max()
+_GROUPS    = sorted(_df_all["Group"].dropna().unique())
+_TIERS     = sorted(_df_all["Marketing_Tier"].dropna().unique())
+_REGIONS   = sorted(_df_all["Region"].dropna().unique())
+_PRODUCTS  = sorted(_df_all["Product"].dropna().unique())
+_SEGMENTS  = sorted(_df_all["Segment_Type"].dropna().unique())
+_CHANNELS  = sorted(_df_all["Channel"].dropna().unique())
 
 
 @module.ui
@@ -49,12 +69,10 @@ def sidebar_ui():
     return ui.sidebar(
         ui.h3("Filters"),
 
-        # 1) range slider for Month
+        # slider now has real datetime bounds
         ui.input_slider(
-            "month_range",
-            "Time Period",
-            min=_MIN_DATE,
-            max=_MAX_DATE,
+            "month_range", "Time Period",
+            min=_MIN_DATE, max=_MAX_DATE,
             value=(_MIN_DATE, _MAX_DATE),
             ticks=True,
             time_format="%b|%Y",
@@ -62,20 +80,37 @@ def sidebar_ui():
             width="100%",
         ),
 
-        # 2) multi-select group selector
         ui.input_selectize(
-            "group",
-            "Group",
+            "group", "Group",
             choices=_GROUPS,
             multiple=True,
         ),
 
-        # the rest
-        ui.input_select("marketing_tier", "Marketing Tier", choices=["All"] + _TIERS, selected="All"),
-        ui.input_select("region",           "Region",          choices=["All"] + _REGIONS, selected="All"),
-        ui.input_select("product",          "Product",         choices=["All"] + _PRODUCTS, selected="All"),
-        ui.input_select("segment_type",     "Segment",         choices=["All"] + _SEGMENTS, selected="All"),
-        ui.input_select("channel",          "Channel",         choices=["All"] + _CHANNELS, selected="All"),
+        ui.input_select(
+            "marketing_tier", "Marketing Tier",
+            choices=["All"] + _TIERS,
+            selected="All",
+        ),
+        ui.input_select(
+            "region", "Region",
+            choices=["All"] + _REGIONS,
+            selected="All",
+        ),
+        ui.input_select(
+            "product", "Product",
+            choices=["All"] + _PRODUCTS,
+            selected="All",
+        ),
+        ui.input_select(
+            "segment_type", "Segment",
+            choices=["All"] + _SEGMENTS,
+            selected="All",
+        ),
+        ui.input_select(
+            "channel", "Channel",
+            choices=["All"] + _CHANNELS,
+            selected="All",
+        ),
     )
 
 
