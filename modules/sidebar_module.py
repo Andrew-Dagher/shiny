@@ -12,31 +12,23 @@ conn = sqlite3.connect(_db_path)
 _raw = pd.read_sql("SELECT * FROM group_performance", conn)
 conn.close()
 
-# ─── Identify the correct fiscal‐period column ───────────────────────────
-for candidate in ("sqpmp_fiscal_period_cd", "sqapp_fiscal_period_cd"):
-    if candidate in _raw.columns:
-        fiscal_col = candidate
-        break
-else:
-    raise RuntimeError("Neither sqpmp_fiscal_period_cd nor sqapp_fiscal_period_cd found in DB")
-
-# ─── 1) Parse fiscal code YYYYMM → Month ─────────────────────────────────
+# ─── Parse fiscal code → Month ───────────────────────────────────────────
 _raw["Month"] = pd.to_datetime(
-    _raw[fiscal_col].astype(str),
+    _raw["sqpmp_fiscal_period_cd"].astype(str),
     format="%Y%m",
     errors="coerce",
 )
 
-# ─── 2) Drop rows where Month failed or group name missing ────────────────
+# ─── Drop any rows where Month or group name is missing ─────────────────
 _raw.dropna(subset=["Month", "parentgroupname"], inplace=True)
 
-# ─── 3) Fill numeric nulls for safety ───────────────────────────────────
+# ─── Fill numeric nulls for safety ───────────────────────────────────────
 _for_zero = ["nb_quote", "nb_nwb", "nb_ren", "total_wp", "inforce_clients"]
 for col in _for_zero:
     if col in _raw.columns:
         _raw[col] = _raw[col].fillna(0)
 
-# ─── 4) Map to the fields your dashboard expects ────────────────────────
+# ─── Map to the fields your dashboard expects ────────────────────────────
 _df_all = _raw.assign(
     Group            = _raw["parentgroupname"],
     Marketing_Tier   = _raw["grp_marketing_tier"],
@@ -52,12 +44,12 @@ _df_all["Avg_Premium"]   = _df_all.apply(lambda r: r.total_wp/r.Sales if r.Sales
 _df_all["Avg_CLV"]       = _df_all.apply(lambda r: r.total_wp/r.inforce_clients if r.inforce_clients>0 else 0, axis=1)
 _df_all["Closing_Ratio"] = (_df_all["Sales"]/_df_all["Quotes"]*100).round(2)
 
-# ─── 5) Compute slider bounds & dropdown choices ─────────────────────────
-valid_months = _df_all["Month"].dropna()
+# ─── Compute slider bounds & dropdown choices ────────────────────────────
+valid_months = _df_all["Month"]
 _MIN_DATE = valid_months.min()
 _MAX_DATE = valid_months.max()
 
-_GROUPS   = sorted(_df_all["Group"].dropna().unique())
+_GROUPS   = sorted(_df_all["Group"].unique())
 _TIERS    = sorted(_df_all["Marketing_Tier"].dropna().unique())
 _REGIONS  = sorted(_df_all["Region"].dropna().unique())
 _PRODUCTS = sorted(_df_all["Product"].dropna().unique())
@@ -95,15 +87,12 @@ def sidebar_server(input, output, session):
     def filtered_data():
         df = _df_all.copy()
 
-        # date filter
         start, end = input.month_range()
         df = df[(df["Month"] >= start) & (df["Month"] <= end)]
 
-        # group filter
         if input.group():
             df = df[df["Group"].isin(input.group())]
 
-        # other dropdowns
         for fld, val in [
             ("Marketing_Tier", input.marketing_tier()),
             ("Region",         input.region()),
