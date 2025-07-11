@@ -1,122 +1,109 @@
 # modules/sidebar_module.py
-from shiny import ui, reactive, module
+import os
+import sqlite3
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 
-# --- sample data ---
-np.random.seed(123)
-num_months = 12
-today = datetime.now()
-dates = [
-    (today - timedelta(days=30 * i)).strftime("%b %y")
-    for i in range(num_months - 1, -1, -1)
-]
+from shiny import ui, reactive, module
 
-groups = ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]
-tiers = ["Premium", "Standard", "Basic"]
-regions = ["North", "South", "East", "West", "Central"]
-products = ["Home", "Auto"]
-channels = ["In", "Web"]
-segment_types = ["Affinity", "Direct Market"]
+# ─── Load & transform DB once at import ─────────────────────────────────
+_db_path = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "database", "Dashboard.db")
+)
+_conn = sqlite3.connect(_db_path)
+_df_all = pd.read_sql("SELECT * FROM group_performance", _conn, parse_dates=["start_date"])
+_conn.close()
 
-data = pd.DataFrame({
-    "Month": dates,
-    "Group": np.random.choice(groups, num_months),
-    "Marketing_Tier": np.random.choice(tiers, num_months),
-    "Region": np.random.choice(regions, num_months),
-    "Product": np.random.choice(products, num_months),
-    "Channel": np.random.choice(channels, num_months),
-    "Segment_Type": np.random.choice(segment_types, num_months),
-    "Quotes": np.random.randint(800, 1200, num_months),
-    "Sales": np.random.randint(200, 500, num_months),
-    "Written_Premiums": np.random.randint(200000, 500000, num_months),
-    "Avg_Premium": np.random.randint(800, 1500, num_months),
-    "Avg_CLV": np.random.randint(3000, 8000, num_months),
-})
-data["Closing_Ratio"] = (data["Sales"] / data["Quotes"] * 100).round(2)
+# Map DB to the fields your dashboard expects
+_df_all = _df_all.assign(
+    Month              = _df_all["start_date"],
+    Group              = _df_all["parentgroupname"],
+    Marketing_Tier     = _df_all["grp_marketing_tier"],
+    Region             = _df_all["region"],
+    Product            = _df_all["product"],
+    Channel            = _df_all["incoming_channel"],
+    Segment_Type       = _df_all["grp_segment"],
+    Quotes             = _df_all["nb_quote"].astype(int),
+    Sales              = (_df_all["nb_nwb"] + _df_all["nb_ren"]).astype(int),
+    Written_Premiums   = _df_all["total_wp"].astype(float),
+)
+_df_all["Avg_Premium"] = _df_all.apply(
+    lambda r: (r["total_wp"] / r["Sales"]) if r["Sales"] > 0 else 0, axis=1
+)
+_df_all["Avg_CLV"] = _df_all.apply(
+    lambda r: (r["total_wp"] / r["inforce_clients"]) if r["inforce_clients"] > 0 else 0, axis=1
+)
+_df_all["Closing_Ratio"] = (_df_all["Sales"] / _df_all["Quotes"] * 100).round(2)
 
-# convert Month strings to actual dates for the slider
-data["Month"] = pd.to_datetime(data["Month"], format="%b %y")
+# Pre-compute for UI
+_MIN_DATE, _MAX_DATE = _df_all["Month"].min(), _df_all["Month"].max()
+_GROUPS   = sorted(_df_all["Group"].unique())
+_TIERS    = sorted(_df_all["Marketing_Tier"].unique())
+_REGIONS  = sorted(_df_all["Region"].unique())
+_PRODUCTS = sorted(_df_all["Product"].unique())
+_SEGMENTS = sorted(_df_all["Segment_Type"].unique())
+_CHANNELS = sorted(_df_all["Channel"].unique())
+
 
 @module.ui
 def sidebar_ui():
     return ui.sidebar(
         ui.h3("Filters"),
-        # 1) range slider for Month, formatted as "Mon|YY"
+
+        # 1) range slider for Month
         ui.input_slider(
             "month_range",
             "Time Period",
-            min=data["Month"].min(),
-            max=data["Month"].max(),
-            value=(data["Month"].min(), data["Month"].max()),
+            min=_MIN_DATE,
+            max=_MAX_DATE,
+            value=(_MIN_DATE, _MAX_DATE),
             ticks=True,
-            time_format="%b|%y",
+            time_format="%b|%Y",
             drag_range=True,
             width="100%",
         ),
-        # 2) multi-select group selector (only existing groups allowed)
-        ui.input_select(
+
+        # 2) multi-select group selector
+        ui.input_selectize(
             "group",
             "Group",
-            choices=groups,
+            choices=_GROUPS,
             multiple=True,
-            # removed 'create' option so users cannot add arbitrary entries
         ),
-        ui.input_select(
-            "marketing_tier",
-            "Marketing Tier",
-            choices=["All"] + tiers,
-            selected="All",
-        ),
-        ui.input_select(
-            "region",
-            "Region",
-            choices=["All"] + regions,
-            selected="All",
-        ),
-        ui.input_select(
-            "product",
-            "Product",
-            choices=["All"] + products,
-            selected="All",
-        ),
-        ui.input_select(
-            "segment_type",
-            "Segment",
-            choices=["All"] + segment_types,
-            selected="All",
-        ),
-        ui.input_select(
-            "channel",
-            "Channel",
-            choices=["All"] + channels,
-            selected="All",
-        ),
+
+        # the rest
+        ui.input_select("marketing_tier", "Marketing Tier", choices=["All"] + _TIERS, selected="All"),
+        ui.input_select("region",           "Region",          choices=["All"] + _REGIONS, selected="All"),
+        ui.input_select("product",          "Product",         choices=["All"] + _PRODUCTS, selected="All"),
+        ui.input_select("segment_type",     "Segment",         choices=["All"] + _SEGMENTS, selected="All"),
+        ui.input_select("channel",          "Channel",         choices=["All"] + _CHANNELS, selected="All"),
     )
+
 
 @module.server
 def sidebar_server(input, output, session):
-    @reactive.calc
+    @reactive.Calc
     def filtered_data():
-        df = data.copy()
-        # apply the date-range filter
+        df = _df_all.copy()
+
+        # date filter
         start, end = input.month_range()
         df = df[(df["Month"] >= start) & (df["Month"] <= end)]
-        # apply the multi-group filter (empty = all)
-        selected_groups = input.group()
-        if selected_groups:
-            df = df[df["Group"].isin(selected_groups)]
-        # other dropdown filters
+
+        # group filter
+        if input.group():
+            df = df[df["Group"].isin(input.group())]
+
+        # other dropdowns
         for fld, val in [
             ("Marketing_Tier", input.marketing_tier()),
-            ("Region", input.region()),
-            ("Product", input.product()),
-            ("Segment_Type", input.segment_type()),
-            ("Channel", input.channel()),
+            ("Region",         input.region()),
+            ("Product",        input.product()),
+            ("Segment_Type",   input.segment_type()),
+            ("Channel",        input.channel()),
         ]:
-            if val != "All":
+            if val and val != "All":
                 df = df[df[fld] == val]
+
         return df
 
     return filtered_data

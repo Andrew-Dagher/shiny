@@ -1,0 +1,4 @@
+sqapp_fiscal_period_cd,parentgroupno,parentgroupname,grp_marketing_tier,region,province,top3Q,grp_segment,product,subproduct,bol_eligibility,incoming_channel,closing_channel,nb_quote,nb_nwb,nb_ren,nb_can,nb_end,prime_nwb,prime_ren,prime_can,prime_end,total_wp,start_date,group_age,nb_eligibles,inforce_clients,zones,nb_policies
+202301,10001,Alpha Group,Premium,East,ON,Top1,Affinity,Home,Standard,Yes,Web,In,120,30,50,20,20,5000.0,7500.0,6000.0,4000.0,250000.0,2023-01-01,2.5,1000,800,Zone1,150
+202302,10002,Beta Group,Standard,West,BC,Top2,Direct Market,Auto,Deluxe,No,In,Web,95,25,40,15,15,4000.0,6800.0,5500.0,3700.0,200000.0,2023-02-01,3.1,950,820,Zone2,140
+202303,10003,Gamma Group,Basic,North,AB,Top3,Affinity,Home,Premium,Yes,Web,In,140,35,60,25,20,6000.0,8000.0,6500.0,4200.0,280000.0,2023-03-01,1.8,1020,850,Zone3,160
