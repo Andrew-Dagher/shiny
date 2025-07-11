@@ -13,6 +13,7 @@ _METRICS = [
     "Avg_Premium",
     "Avg_CLV",
 ]
+
 METRIC_LABELS = {
     "Quotes": "Quotes",
     "Sales": "Sales",
@@ -21,6 +22,7 @@ METRIC_LABELS = {
     "Avg_Premium": "Average Premium",
     "Avg_CLV": "Average CLV",
 }
+
 COLORS = {
     "Quotes": "tab:blue",
     "Sales": "tab:orange",
@@ -29,7 +31,6 @@ COLORS = {
     "Avg_CLV": "tab:brown",
     "Closing_Ratio": "tab:green",
 }
-
 
 @module.ui
 def dashboard_ui():
@@ -63,10 +64,9 @@ def dashboard_ui():
                 ui.output_plot("trend_plot"),
                 ui.output_ui("trend_indicators"),
             ),
-            width=1 / 2,
+            width=1/2,
         ),
     )
-
 
 @module.server
 def dashboard_server(input, output, session, filtered_data):
@@ -78,7 +78,8 @@ def dashboard_server(input, output, session, filtered_data):
         if input.show_top30():
             aff = df[df.Segment_Type == "Affinity"]
             top30 = (
-                aff.groupby("Group")["Quotes"]
+                aff
+                .groupby("Group")["Quotes"]
                 .sum()
                 .nlargest(30)
                 .index
@@ -98,19 +99,14 @@ def dashboard_server(input, output, session, filtered_data):
             last_month_label = ""
 
         rows = []
+        # – Metric rows –
         for m in _METRICS:
             label = METRIC_LABELS[m]
-
-            # — Metric row —
             row = {"Metrics": f"<b>{label}</b>"}
             for cat_name, sub in cats:
                 sub_s = sub.sort_values("Month")
-                num = (
-                    sub_s[m].mean()
-                    if m == "Closing_Ratio"
-                    else sub_s[m].sum()
-                )
-                val = f"{num:.1f}% " if m == "Closing_Ratio" else f"{int(num):,}"
+                num = sub_s[m].mean() if m == "Closing_Ratio" else sub_s[m].sum()
+                val = f"{num:.1f}%" if m == "Closing_Ratio" else f"{int(num)}"
                 if len(sub_s) > 1:
                     first, last = sub_s[m].iloc[[0, -1]]
                     pct = 0 if first == 0 else (last - first) / first * 100
@@ -120,43 +116,35 @@ def dashboard_server(input, output, session, filtered_data):
                 row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
             rows.append(row)
 
-            # — Phone row —
-            row = {"Metrics": "&nbsp;&nbsp;&nbsp;Phone"}
-            for cat_name, sub in cats:
-                s = sub[sub.Channel == "In"].sort_values("Month")
-                num = (
-                    s[m].mean()
-                    if m == "Closing_Ratio"
-                    else s[m].sum()
-                )
-                val = f"{num:.1f}% " if m == "Closing_Ratio" else f"{int(num):,}"
-                if len(s) > 1:
-                    first, last = s[m].iloc[[0, -1]]
-                    pct = 0 if first == 0 else (last - first) / first * 100
-                else:
-                    pct = 0
-                row[f"{cat_name} {last_month_label}"] = val
-                row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
-            rows.append(row)
+        # – Phone row –
+        row = {"Metrics": "&nbsp;&nbsp;&nbsp;Phone"}
+        for cat_name, sub in cats:
+            s = sub[sub.Channel == "In"].sort_values("Month")
+            num = s[m].mean() if m == "Closing_Ratio" else s[m].sum()
+            val = f"{num:.1f}%" if m == "Closing_Ratio" else f"{int(num)}"
+            if len(s) > 1:
+                first, last = s[m].iloc[[0, -1]]
+                pct = 0 if first == 0 else (last - first) / first * 100
+            else:
+                pct = 0
+            row[f"{cat_name} {last_month_label}"] = val
+            row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
+        rows.append(row)
 
-            # — Web row —
-            row = {"Metrics": "&nbsp;&nbsp;&nbsp;Web"}
-            for cat_name, sub in cats:
-                s = sub[sub.Channel == "Web"].sort_values("Month")
-                num = (
-                    s[m].mean()
-                    if m == "Closing_Ratio"
-                    else s[m].sum()
-                )
-                val = f"{num:.1f}% " if m == "Closing_Ratio" else f"{int(num):,}"
-                if len(s) > 1:
-                    first, last = s[m].iloc[[0, -1]]
-                    pct = 0 if first == 0 else (last - first) / first * 100
-                else:
-                    pct = 0
-                row[f"{cat_name} {last_month_label}"] = val
-                row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
-            rows.append(row)
+        # – Web row –
+        row = {"Metrics": "&nbsp;&nbsp;&nbsp;Web"}
+        for cat_name, sub in cats:
+            s = sub[sub.Channel == "Web"].sort_values("Month")
+            num = s[m].mean() if m == "Closing_Ratio" else s[m].sum()
+            val = f"{num:.1f}%" if m == "Closing_Ratio" else f"{int(num)}"
+            if len(s) > 1:
+                first, last = s[m].iloc[[0, -1]]
+                pct = 0 if first == 0 else (last - first) / first * 100
+            else:
+                pct = 0
+            row[f"{cat_name} {last_month_label}"] = val
+            row[f"{cat_name} YoY"] = f"{pct:+.1f}%"
+        rows.append(row)
 
         wide = pd.DataFrame(rows)
         # enforce column order
@@ -203,10 +191,10 @@ def dashboard_server(input, output, session, filtered_data):
         scale = {
             "Quotes": 1,
             "Sales": 1,
-            "Written_Premiums": 1 / 1000,
+            "Written_Premiums": 1/1000,
             "Closing_Ratio": 1,
             "Avg_Premium": 1,
-            "Avg_CLV": 1 / 1000,
+            "Avg_CLV": 1/1000,
         }
 
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -254,7 +242,7 @@ def dashboard_server(input, output, session, filtered_data):
             ax2.set_ylabel("Closing Ratio (%)")
             h2, l2 = ax2.get_legend_handles_labels()
 
-        # monthly labels formatted as "Mon YYYY"
+        # format axes
         ax.set_xticks(x)
         ax.set_xticklabels(df["Month"].dt.strftime("%b %Y"), rotation=45)
         ax.set_xlabel("Month")
@@ -262,8 +250,10 @@ def dashboard_server(input, output, session, filtered_data):
         ax.set_title("Performance Trends")
         ax.grid(True, linestyle="--", alpha=0.7)
 
+        # combine legends
         handles, labels = ax.get_legend_handles_labels()
         ax.legend(handles + h2, labels + l2, loc="upper left")
+
         fig.tight_layout()
         return fig
 
@@ -291,6 +281,6 @@ def dashboard_server(input, output, session, filtered_data):
             )
         return ui.div(
             ui.h4("Trend Analysis (Month-over-Month)"),
-            ui.div({"class": "d-flex flex-wrap"}, *items),
+            ui.div({"class": "d-flex flex-wrap"}, items),
             style="margin-top:15px;",
         )

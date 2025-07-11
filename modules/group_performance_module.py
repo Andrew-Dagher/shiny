@@ -19,7 +19,7 @@ def group_performance_ui():
         "Group Performance",
         ui.card(
             ui.card_header("Group Performance Metrics"),
-            ui.output_data_frame("group_monthly_data")
+            ui.output_data_frame("group_monthly_data"),
         ),
         ui.card(
             ui.card_header("Group Performance Comparison"),
@@ -27,10 +27,10 @@ def group_performance_ui():
                 "group_compare_metric",
                 "Select Metric to Compare",
                 choices=METRIC_LABELS,
-                selected="Quotes"
+                selected="Quotes",
             ),
-            ui.output_plot("group_comparison_plot")
-        )
+            ui.output_plot("group_comparison_plot"),
+        ),
     )
 
 @module.server
