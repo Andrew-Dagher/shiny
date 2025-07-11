@@ -11,7 +11,7 @@ def initialize_database():
     # Create table if it doesn't exist
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS group_performance (
-        sqapp_fiscal_period_cd INTEGER,
+        sqpmp_fiscal_period_cd INTEGER,
         parentgroupno TEXT PRIMARY KEY,
         parentgroupname TEXT,
         grp_marketing_tier TEXT,
