@@ -1,37 +1,30 @@
-# modules/sidebar_module.py
-
 import os
 import sqlite3
 import pandas as pd
-
 from shiny import ui, reactive, module
 
-# ─── Force the DB to exist & be populated ────────────────────────────────
-from database.load_data import initialize_database
-initialize_database()
-
-# ─── Now load & preprocess the DB ────────────────────────────────────────
-_db = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "database", "Dashboard.db")
-)
+# ─── Load & preprocess ────────────────────────────────────────────────────────
+_db = os.path.join(os.path.dirname(__file__), "..", "database", "Dashboard.db")
 conn = sqlite3.connect(_db)
 raw = pd.read_sql("SELECT * FROM group_performance", conn)
 conn.close()
 
-# ─── Parse fiscal code YYYYMM → Timestamp, drop failures ─────────────────
-raw["Month"] = pd.to_datetime(
-    raw["sqpmp_fiscal_period_cd"].astype(str),
-    format="%Y%m",
-    errors="coerce"
-)
+# — Convert float→int→6-digit string so "202507.0" → "202507"
+code_int = raw["sqpmp_fiscal_period_cd"].fillna(0).astype(int)
+code_str = code_int.astype(str).str.zfill(6)
+
+# — Now parse YYYYMM safely → first of that month
+raw["Month"] = pd.to_datetime(code_str, format="%Y%m", errors="coerce")
+
+# — Drop any rows where parsing failed or group is missing
 raw.dropna(subset=["Month", "parentgroupname"], inplace=True)
 
-# ─── Zero out any numeric holes ──────────────────────────────────────────
-for col in ("nb_quote", "nb_nwb", "nb_ren", "total_wp", "inforce_clients"):
-    if col in raw.columns:
-        raw[col] = raw[col].fillna(0)
+# — Zero-fill the numeric holes (so sums/ratios never blow up)
+for c in ("nb_quote", "nb_nwb", "nb_ren", "total_wp", "inforce_clients"):
+    if c in raw.columns:
+        raw[c] = raw[c].fillna(0)
 
-# ─── Rename/map to what your UI expects ─────────────────────────────────
+# — Remap to the fields your dashboard expects
 df_all = raw.assign(
     Group            = raw["parentgroupname"],
     Marketing_Tier   = raw["grp_marketing_tier"],
@@ -47,7 +40,7 @@ df_all["Avg_Premium"]   = df_all.apply(lambda r: r.total_wp/r.Sales if r.Sales>0
 df_all["Avg_CLV"]       = df_all.apply(lambda r: r.total_wp/r.inforce_clients if r.inforce_clients>0 else 0, axis=1)
 df_all["Closing_Ratio"] = (df_all["Sales"]/df_all["Quotes"]*100).round(2)
 
-# ─── Compute slider bounds & dropdown choices ────────────────────────────
+# ─── Compute pure‐Python datetimes for the slider ───────────────────────────
 min_date = df_all["Month"].min().to_pydatetime()
 max_date = df_all["Month"].max().to_pydatetime()
 
@@ -64,15 +57,12 @@ def sidebar_ui():
     return ui.sidebar(
         ui.h3("Filters"),
 
-        # now guaranteed to be real datetimes
         ui.input_slider(
             "month_range", "Time Period",
             min=min_date, max=max_date,
             value=(min_date, max_date),
-            ticks=True,
-            time_format="%b|%Y",
-            drag_range=True,
-            width="100%",
+            ticks=True, time_format="%b|%Y",
+            drag_range=True, width="100%",
         ),
 
         ui.input_selectize("group",        "Group",          choices=groups,   multiple=True),
@@ -90,15 +80,15 @@ def sidebar_server(input, output, session):
     def filtered_data():
         df = df_all.copy()
 
-        # date‐range
+        # filter by the parsed Month
         start, end = input.month_range()
         df = df[(df["Month"] >= start) & (df["Month"] <= end)]
 
-        # group multiselect
+        # group multi‐select
         if input.group():
             df = df[df["Group"].isin(input.group())]
 
-        # other dropdowns
+        # the other dropdowns
         for fld, val in [
             ("Marketing_Tier", input.marketing_tier()),
             ("Region",         input.region()),
