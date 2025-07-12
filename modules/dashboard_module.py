@@ -1,9 +1,10 @@
 # modules/dashboard_module.py
+
 from shiny import ui, render, reactive, module
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# same constants as before
+# ─── Constants ─────────────────────────────────────────────────────────────
 _METRICS = [
     "Quotes", "Sales", "Written_Premiums",
     "Closing_Ratio", "Avg_Premium", "Avg_CLV",
@@ -37,26 +38,32 @@ SCALE = {
 }
 
 
+# ─── UI ─────────────────────────────────────────────────────────────────────
 @module.ui
 def dashboard_ui():
     return ui.nav_panel(
         "Executive Overview",
 
+        # KPI Table
         ui.card(
             ui.card_header("KPI Data Table"),
             ui.div(
-                ui.input_switch("show_top30", "Show Top 30 Affinity Groups", value=False),
+                ui.input_switch(
+                    "show_top30",
+                    "Show Top 30 Affinity Groups",
+                    value=False
+                ),
                 style="margin-bottom:10px;",
             ),
             ui.output_ui("kpi_table"),
         ),
 
+        # Trends: Sales & Closing on left, Other metrics on right
         ui.layout_column_wrap(
             ui.card(
                 ui.card_header("Sales & Closing Trends"),
                 ui.output_plot("sales_closing_plot"),
             ),
-
             ui.card(
                 ui.card_header("Other Metrics Trends"),
                 ui.input_checkbox_group(
@@ -73,27 +80,28 @@ def dashboard_ui():
                 ui.output_plot("other_trends_plot"),
                 ui.output_ui("other_trend_indicators"),
             ),
-
             width=1/2,
         ),
     )
 
 
+# ─── Server ─────────────────────────────────────────────────────────────────
 @module.server
 def dashboard_server(input, output, session, filtered_data):
 
+    # — Build the wide KPI table —
     @reactive.Calc
     def kpi_wide() -> pd.DataFrame:
         df = filtered_data().copy()
-
-        # ensure numeric columns never NaN
+        # drop any rows missing Month/Group and fill NaN metrics with 0
+        df.dropna(subset=["Month", "Group"], inplace=True)
         df[_METRICS] = df[_METRICS].fillna(0)
 
-        # categories logic
+        # pick categories
         if input.show_top30():
-            aff   = df[df.Segment_Type == "Affinity"]
+            aff = df[df.Segment_Type == "Affinity"]
             top30 = aff.groupby("Group")["Quotes"].sum().nlargest(30).index
-            cats  = [("Top 30 Affinity", aff[aff.Group.isin(top30)])]
+            cats = [("Top 30 Affinity", aff[aff.Group.isin(top30)])]
         else:
             cats = [
                 ("Affinity",      df[df.Segment_Type == "Affinity"]),
@@ -105,37 +113,43 @@ def dashboard_server(input, output, session, filtered_data):
         rows = []
 
         for m in _METRICS:
-            for prefix, chan in [(f"<b>{METRIC_LABELS[m]}</b>", None),
-                                 ("   Phone", "In"), ("   Web", "Web")]:
+            for prefix, chan in [
+                (f"<b>{METRIC_LABELS[m]}</b>", None),
+                ("   Phone", "In"),
+                ("   Web",   "Web"),
+            ]:
                 row = {"Metrics": prefix}
                 for cat_name, sub in cats:
                     sub = sub if chan is None else sub[sub.Channel == chan]
                     s   = sub.sort_values("Month")[m].fillna(0)
+
+                    # total or mean
                     total = s.mean() if m == "Closing_Ratio" else s.sum()
-                    pct   = (
-                        0
-                        if len(s) < 2 or s.iloc[0] == 0
-                        else (s.iloc[-1] - s.iloc[0]) / s.iloc[0] * 100
-                    )
-                    val = (
-                        f"{total:.1f}%"
-                        if m == "Closing_Ratio"
-                        else f"{int(total)}"
-                    )
+
+                    # <— Safely compute % change
+                    if len(s) >= 2 and s.iloc[0] != 0:
+                        pct = (s.iloc[-1] - s.iloc[0]) / s.iloc[0] * 100
+                    else:
+                        pct = 0
+                    # —>
+
+                    val = f"{total:.1f}%" if m == "Closing_Ratio" else f"{int(total)}"
                     row[f"{cat_name} {last_lbl}"] = val
-                    row[f"{cat_name} YoY"]         = f"{pct:+.1f}%"
+                    row[f"{cat_name} YoY"]       = f"{pct:+.1f}%"
                 rows.append(row)
 
         wide = pd.DataFrame(rows).fillna("")
         cols = ["Metrics"] + [
-            c for cat, _ in cats for c in (f"{cat} {last_lbl}", f"{cat} YoY")
+            c
+            for cat, _ in cats
+            for c in (f"{cat} {last_lbl}", f"{cat} YoY")
         ]
         return wide[cols]
 
     @render.ui
     def kpi_table():
-        df    = kpi_wide()
-        html  = df.to_html(index=False, escape=False, classes="table table-sm")
+        df   = kpi_wide()
+        html = df.to_html(index=False, escape=False, classes="table table-sm")
         styled = f"""
 <style>
 .kpi-table table {{ border-collapse: collapse; width:100%; font-size:calc(100% - 1px); }}
@@ -148,20 +162,20 @@ def dashboard_server(input, output, session, filtered_data):
 """
         return ui.HTML(styled)
 
+    # — Sales & Closing Trends —
     @render.plot
     def sales_closing_plot():
         df = filtered_data().sort_values("Month").copy()
         df[_METRICS] = df[_METRICS].fillna(0)
 
-        x = range(len(df))
+        x      = range(len(df))
         bottom = [0] * len(df)
         fig, ax = plt.subplots(figsize=(10, 6))
 
         for m in ("Quotes", "Sales"):
             vals = (df[m] * SCALE[m]).tolist()
             ax.bar(
-                x,
-                vals,
+                x, vals,
                 bottom=bottom,
                 width=0.6,
                 alpha=0.5,
@@ -194,13 +208,14 @@ def dashboard_server(input, output, session, filtered_data):
         fig.tight_layout()
         return fig
 
+    # — Other Metrics Trends —
     @render.plot
     def other_trends_plot():
-        df = filtered_data().sort_values("Month").copy()
+        df  = filtered_data().sort_values("Month").copy()
         df[_METRICS] = df[_METRICS].fillna(0)
-
         sel = input.other_metrics()
         x   = range(len(df))
+
         fig, ax = plt.subplots(figsize=(10, 6))
         for m in sel:
             ax.plot(
@@ -220,28 +235,31 @@ def dashboard_server(input, output, session, filtered_data):
         fig.tight_layout()
         return fig
 
+    # — Trend‐over‐month Indicators —
     @render.ui
     def other_trend_indicators():
-        df = filtered_data().sort_values("Month").copy()
+        df  = filtered_data().sort_values("Month").copy()
         df[_METRICS] = df[_METRICS].fillna(0)
-
         items = []
         for m in input.other_metrics():
-            if len(df) < 2:
-                continue
-            cur, prev = df[m].iloc[-1], df[m].iloc[-2]
-            pct = 0 if prev == 0 else (cur - prev) / prev * 100
+            s = df[m]
+            # <— Safely compute last‐month vs prior‐month percent
+            if len(s) < 2 or s.iloc[-2] == 0:
+                pct = 0
+            else:
+                pct = (s.iloc[-1] - s.iloc[-2]) / s.iloc[-2] * 100
+            # —>
             arrow = "▲" if pct > 0 else "▼" if pct < 0 else "→"
             color = "green" if pct > 0 else "red" if pct < 0 else "gray"
             items.append(
                 ui.div(
                     ui.h5(METRIC_LABELS[m]),
-                    ui.p(f"{arrow} {pct:+.1f}%", style=f"color:{color}; font-weight:bold;"),
-                    style="margin-right:15px; margin-bottom:10px;",
+                    ui.p(f"{arrow} {pct:+.1f}%", style=f"color:{color};font-weight:bold;"),
+                    style="margin-right:15px;margin-bottom:10px;",
                 )
             )
         return ui.div(
             ui.h4("Trend Analysis (Month-over-Month)"),
-            ui.div({"class": "d-flex flex-wrap"}, items),
+            ui.div({"class":"d-flex flex-wrap"}, items),
             style="margin-top:15px;",
         )
