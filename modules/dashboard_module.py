@@ -2,6 +2,7 @@
 
 from shiny import ui, render, reactive, module
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 
 # ─── Constants ─────────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ def dashboard_ui():
     return ui.nav_panel(
         "Executive Overview",
 
+        # KPI table
         ui.card(
             ui.card_header("KPI Data Table"),
             ui.div(
@@ -53,6 +55,7 @@ def dashboard_ui():
             ui.output_ui("kpi_table"),
         ),
 
+        # Bottom row: Sales/Closing on left, Others on right
         ui.layout_column_wrap(
             ui.card(
                 ui.card_header("Sales & Closing Trends"),
@@ -87,8 +90,11 @@ def dashboard_server(input, output, session, filtered_data):
     def kpi_wide() -> pd.DataFrame:
         df = filtered_data().copy()
         df.dropna(subset=["Month", "Group"], inplace=True)
-        df[_METRICS] = df[_METRICS].fillna(0).astype(float)
 
+        # zero‐fill and eliminate any remaining infinities in every metric
+        df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
+
+        # pick cats
         if input.show_top30():
             aff   = df[df.Segment_Type == "Affinity"]
             top30 = aff.groupby("Group")["Quotes"].sum().nlargest(30).index
@@ -102,6 +108,7 @@ def dashboard_server(input, output, session, filtered_data):
 
         last_lbl = df["Month"].iloc[-1].strftime("%b %Y") if not df.empty else ""
         rows = []
+
         for m in _METRICS:
             label = METRIC_LABELS[m]
 
@@ -109,17 +116,24 @@ def dashboard_server(input, output, session, filtered_data):
                 row = {"Metrics": prefix}
                 for cat_name, sub in cats:
                     sub = sub if chan is None else sub[sub.Channel == chan]
-                    s   = sub.sort_values("Month")[m].fillna(0).astype(float)
 
-                    # — SAFE percent‐change guard —
-                    if len(s) >= 2 and s.iloc[0] != 0:
+                    # build the series, replace inf, fill NaN, cast float
+                    s = (
+                        sub.sort_values("Month")[m]
+                        .replace([np.inf, -np.inf], 0)
+                        .fillna(0)
+                        .astype(float)
+                    )
+
+                    # safe percent‐change
+                    if len(s) >= 2 and s.iloc[0] not in (0, np.nan):
                         pct = (s.iloc[-1] - s.iloc[0]) / s.iloc[0] * 100
                     else:
                         pct = 0
-                    # — end guard —
 
                     total = s.mean() if m == "Closing_Ratio" else s.sum()
                     val   = f"{total:.1f}%" if m == "Closing_Ratio" else f"{int(total)}"
+
                     row[f"{cat_name} {last_lbl}"] = val
                     row[f"{cat_name} YoY"]       = f"{pct:+.1f}%"
                 rows.append(row)
@@ -149,9 +163,9 @@ def dashboard_server(input, output, session, filtered_data):
     @render.plot
     def sales_closing_plot():
         df = filtered_data().sort_values("Month").copy()
-        df[_METRICS] = df[_METRICS].fillna(0).astype(float)
+        df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
 
-        x = range(len(df))
+        x      = range(len(df))
         bottom = [0] * len(df)
         fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -182,7 +196,7 @@ def dashboard_server(input, output, session, filtered_data):
     @render.plot
     def other_trends_plot():
         df = filtered_data().sort_values("Month").copy()
-        df[_METRICS] = df[_METRICS].fillna(0).astype(float)
+        df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
         sel = input.other_metrics()
         x   = range(len(df))
 
@@ -203,12 +217,11 @@ def dashboard_server(input, output, session, filtered_data):
     @render.ui
     def other_trend_indicators():
         df = filtered_data().sort_values("Month").copy()
-        df[_METRICS] = df[_METRICS].fillna(0).astype(float)
+        df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
         items = []
         for m in input.other_metrics():
             s = df[m]
-            # Safe month-over-month
-            if len(s) >= 2 and s.iloc[-2] != 0:
+            if len(s) >= 2 and s.iloc[-2] not in (0, np.nan):
                 pct = (s.iloc[-1] - s.iloc[-2]) / s.iloc[-2] * 100
             else:
                 pct = 0

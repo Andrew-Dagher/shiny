@@ -5,10 +5,6 @@ import sqlite3
 import pandas as pd
 from shiny import ui, reactive, module
 
-# Ensure the DB exists & is populated
-from database.load_data import initialize_database
-initialize_database()
-
 # 1) Load raw table
 db_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "database", "Dashboard.db")
