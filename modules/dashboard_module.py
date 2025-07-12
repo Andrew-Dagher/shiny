@@ -111,12 +111,18 @@ def dashboard_server(input, output, session, filtered_data):
                     sub = sub if chan is None else sub[sub.Channel == chan]
                     s   = sub.sort_values("Month")[m].fillna(0).astype(float)
 
-                    # ← SAFE percent‐change guard
+                    # === DEBUG LOG ===
+                    print(f"[DEBUG KPI] metric={m}, row='{prefix.strip()}', "
+                          f"category={cat_name}, len(s)={len(s)}, "
+                          f"first={(s.iloc[0] if len(s)>0 else 'NA')}, "
+                          f"last={(s.iloc[-1] if len(s)>0 else 'NA')}")
+                    # =================
+
+                    # Safe percent-change
                     if len(s) >= 2 and s.iloc[0] != 0:
                         pct = (s.iloc[-1] - s.iloc[0]) / s.iloc[0] * 100
                     else:
                         pct = 0
-                    # →
 
                     total = s.mean() if m == "Closing_Ratio" else s.sum()
                     val   = f"{total:.1f}%" if m == "Closing_Ratio" else f"{int(total)}"
@@ -151,7 +157,7 @@ def dashboard_server(input, output, session, filtered_data):
         df = filtered_data().sort_values("Month").copy()
         df[_METRICS] = df[_METRICS].fillna(0).astype(float)
 
-        x      = range(len(df))
+        x = range(len(df))
         bottom = [0] * len(df)
         fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -207,12 +213,20 @@ def dashboard_server(input, output, session, filtered_data):
         items = []
         for m in input.other_metrics():
             s = df[m]
+
+            # === DEBUG LOG ===
+            prev = s.iloc[-2] if len(s)>=2 else "NA"
+            cur  = s.iloc[-1] if len(s)>=1 else "NA"
+            print(f"[DEBUG IND] metric={m}, len(s)={len(s)}, prev={prev}, cur={cur}")
+            # =================
+
             if len(s) >= 2 and s.iloc[-2] != 0:
                 pct = (s.iloc[-1] - s.iloc[-2]) / s.iloc[-2] * 100
             else:
                 pct = 0
-            arrow = "▲" if pct>0 else "▼" if pct<0 else "→"
-            color = "green" if pct>0 else "red" if pct<0 else "gray"
+
+            arrow = "▲" if pct > 0 else "▼" if pct < 0 else "→"
+            color = "green" if pct > 0 else "red" if pct < 0 else "gray"
             items.append(
                 ui.div(
                     ui.h5(METRIC_LABELS[m]),
