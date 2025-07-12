@@ -45,7 +45,6 @@ def dashboard_ui():
     return ui.nav_panel(
         "Executive Overview",
 
-        # KPI table
         ui.card(
             ui.card_header("KPI Data Table"),
             ui.div(
@@ -55,7 +54,6 @@ def dashboard_ui():
             ui.output_ui("kpi_table"),
         ),
 
-        # Bottom row: Sales/Closing on left, Others on right
         ui.layout_column_wrap(
             ui.card(
                 ui.card_header("Sales & Closing Trends"),
@@ -90,11 +88,8 @@ def dashboard_server(input, output, session, filtered_data):
     def kpi_wide() -> pd.DataFrame:
         df = filtered_data().copy()
         df.dropna(subset=["Month", "Group"], inplace=True)
-
-        # zero‐fill and eliminate any remaining infinities in every metric
         df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
 
-        # pick cats
         if input.show_top30():
             aff   = df[df.Segment_Type == "Affinity"]
             top30 = aff.groupby("Group")["Quotes"].sum().nlargest(30).index
@@ -111,29 +106,22 @@ def dashboard_server(input, output, session, filtered_data):
 
         for m in _METRICS:
             label = METRIC_LABELS[m]
-
             for prefix, chan in [(f"<b>{label}</b>", None), ("   Phone", "In"), ("   Web", "Web")]:
                 row = {"Metrics": prefix}
                 for cat_name, sub in cats:
                     sub = sub if chan is None else sub[sub.Channel == chan]
-
-                    # build the series, replace inf, fill NaN, cast float
-                    s = (
+                    s   = (
                         sub.sort_values("Month")[m]
                         .replace([np.inf, -np.inf], 0)
                         .fillna(0)
                         .astype(float)
                     )
-
-                    # safe percent‐change
                     if len(s) >= 2 and s.iloc[0] not in (0, np.nan):
                         pct = (s.iloc[-1] - s.iloc[0]) / s.iloc[0] * 100
                     else:
                         pct = 0
-
                     total = s.mean() if m == "Closing_Ratio" else s.sum()
                     val   = f"{total:.1f}%" if m == "Closing_Ratio" else f"{int(total)}"
-
                     row[f"{cat_name} {last_lbl}"] = val
                     row[f"{cat_name} YoY"]       = f"{pct:+.1f}%"
                 rows.append(row)
@@ -143,6 +131,31 @@ def dashboard_server(input, output, session, filtered_data):
             c for cat, _ in cats for c in (f"{cat} {last_lbl}", f"{cat} YoY")
         ]
         return wide[cols]
+
+    @reactive.Calc
+    def monthly_metrics() -> pd.DataFrame:
+        # clean & aggregate once per filter change
+        df = filtered_data().copy()
+        df[_METRICS] = (
+            df[_METRICS]
+            .replace([np.inf, -np.inf], 0)
+            .fillna(0)
+            .astype(float)
+        )
+        agg = (
+            df.groupby("Month")
+              .agg({
+                "Quotes": "sum",
+                "Sales":  "sum",
+                "Written_Premiums": "sum",
+                "Closing_Ratio":   "mean",
+                "Avg_Premium":     "mean",
+                "Avg_CLV":         "mean",
+              })
+              .reset_index()
+              .sort_values("Month")
+        )
+        return agg
 
     @render.ui
     def kpi_table():
@@ -162,26 +175,24 @@ def dashboard_server(input, output, session, filtered_data):
 
     @render.plot
     def sales_closing_plot():
-        df = filtered_data().sort_values("Month").copy()
-        df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
-
-        x      = range(len(df))
-        bottom = [0] * len(df)
+        m = monthly_metrics()
+        x = range(len(m))
+        bottom = [0] * len(m)
         fig, ax = plt.subplots(figsize=(10, 6))
 
-        for m in ("Quotes", "Sales"):
-            vals = (df[m] * SCALE[m]).tolist()
+        for metric in ("Quotes", "Sales"):
+            vals = (m[metric] * SCALE[metric]).tolist()
             ax.bar(x, vals, bottom=bottom, width=0.6,
-                   alpha=0.5, color=COLORS[m], label=METRIC_LABELS[m])
+                   alpha=0.5, color=COLORS[metric], label=METRIC_LABELS[metric])
             bottom = [b + v for b, v in zip(bottom, vals)]
 
         ax2 = ax.twinx()
-        ax2.plot(x, df["Closing_Ratio"], marker="o", linestyle="--",
+        ax2.plot(x, m["Closing_Ratio"], marker="o", linestyle="--",
                  color=COLORS["Closing_Ratio"], label=METRIC_LABELS["Closing_Ratio"])
         ax2.set_ylabel("Closing Ratio (%)")
 
         ax.set_xticks(x)
-        ax.set_xticklabels(df["Month"].dt.strftime("%b %Y"), rotation=45)
+        ax.set_xticklabels(m["Month"].dt.strftime("%b %Y"), rotation=45)
         ax.set_xlabel("Month")
         ax.set_ylabel("Value")
         ax.set_title("Sales & Closing Trends")
@@ -195,33 +206,31 @@ def dashboard_server(input, output, session, filtered_data):
 
     @render.plot
     def other_trends_plot():
-        df = filtered_data().sort_values("Month").copy()
-        df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
-        sel = input.other_metrics()
-        x   = range(len(df))
-
+        m = monthly_metrics()
+        x = range(len(m))
         fig, ax = plt.subplots(figsize=(10, 6))
-        for m in sel:
-            ax.plot(x, df[m] * SCALE[m], marker="o",
-                    color=COLORS[m], label=METRIC_LABELS[m])
+
+        for metric in input.other_metrics():
+            ax.plot(x, m[metric] * SCALE[metric], marker="o",
+                    color=COLORS[metric], label=METRIC_LABELS[metric])
 
         ax.set_xticks(x)
-        ax.set_xticklabels(df["Month"].dt.strftime("%b %Y"), rotation=45)
+        ax.set_xticklabels(m["Month"].dt.strftime("%b %Y"), rotation=45)
         ax.set_xlabel("Month")
         ax.set_ylabel("Value")
         ax.set_title("Other Metrics Trends")
         ax.legend(loc="upper left")
+
         fig.tight_layout()
         return fig
 
     @render.ui
     def other_trend_indicators():
-        df = filtered_data().sort_values("Month").copy()
-        df[_METRICS] = df[_METRICS].replace([np.inf, -np.inf], 0).fillna(0).astype(float)
+        m = monthly_metrics()
         items = []
-        for m in input.other_metrics():
-            s = df[m]
-            if len(s) >= 2 and s.iloc[-2] not in (0, np.nan):
+        for metric in input.other_metrics():
+            s   = m[metric]
+            if len(s) >= 2 and s.iloc[-2] != 0:
                 pct = (s.iloc[-1] - s.iloc[-2]) / s.iloc[-2] * 100
             else:
                 pct = 0
@@ -229,11 +238,12 @@ def dashboard_server(input, output, session, filtered_data):
             color = "green" if pct > 0 else "red" if pct < 0 else "gray"
             items.append(
                 ui.div(
-                    ui.h5(METRIC_LABELS[m]),
+                    ui.h5(METRIC_LABELS[metric]),
                     ui.p(f"{arrow} {pct:+.1f}%", style=f"color:{color};font-weight:bold;"),
                     style="margin-right:15px;margin-bottom:10px;"
                 )
             )
+
         return ui.div(
             ui.h4("Trend Analysis (Month-over-Month)"),
             ui.div({"class": "d-flex flex-wrap"}, items),

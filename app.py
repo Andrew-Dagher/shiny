@@ -5,10 +5,6 @@ from modules.group_performance_module import (
     group_performance_ui,
     group_performance_server,
 )
-from database.load_data import initialize_database
-
-# initialize the SQLite database and load the CSV data
-initialize_database()
 
 # define the UI
 app_ui = ui.page_fluid(
